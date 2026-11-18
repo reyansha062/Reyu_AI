@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reyu AI</title>
+<style>
+:root{--bg:#fff;--panel:#f1f2fb;--ink:#161628;--mute:#62647f;--user:#dfe0ff;--line:#dcdef0;--g1:#6d5efc;--g2:#22d3ee;--g3:#f472b6}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0b17;--panel:#16172b;--ink:#ececff;--mute:#9a9cc4;--user:#25264a;--line:#2a2c52}}
+html,body{height:100%;margin:0}*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g3));display:grid;place-items:center;color:#fff;font-weight:800;flex:none}
+.sp{flex:1}select,.ib{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:7px 10px;font:inherit;font-size:.85rem;cursor:pointer}
+#chat{flex:1;overflow-y:auto;max-width:800px;width:100%;margin:0 auto;padding:10px 16px}
+.hero{margin-top:6vh}.hero h1{font-size:clamp(2.2rem,8vw,3.6rem);margin:0;background:linear-gradient(90deg,var(--g1),var(--g2),var(--g3));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--mute);font-size:1.1rem}
+.msg{display:flex;gap:10px;margin:16px 0}.me{justify-content:flex-end}
+.me .b{background:var(--user);border-radius:18px 18px 4px 18px;padding:10px 15px;max-width:82%;white-space:pre-wrap;word-break:break-word}
+.bot .logo{width:26px;height:26px;border-radius:8px;font-size:.8rem;margin-top:2px}
+.bot .b{max-width:92%;line-height:1.65;word-break:break-word;min-width:0}
+.b pre{background:#12132a;color:#e8e8ff;border-radius:12px;padding:12px;overflow-x:auto;font-size:.82rem}
+.b :not(pre)>code{background:var(--panel);padding:1px 5px;border-radius:5px}.b p{margin:.5em 0}
+#load{display:none;max-width:800px;width:100%;margin:0 auto;padding:0 16px}
+#load div{height:8px;background:var(--panel);border-radius:8px;overflow:hidden}
+#load i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--g1),var(--g2));transition:width .3s}
+#load small{color:var(--mute);font-size:.78rem}
+form{max-width:800px;width:100%;margin:0 auto;padding:8px 16px 4px}
+.bar{display:flex;align-items:flex-end;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:6px 8px 6px 18px}
+textarea{flex:1;background:none;border:0;outline:0;color:var(--ink);font:inherit;font-size:1rem;padding:9px 0;resize:none;max-height:150px}
+.go{border:0;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--g1),var(--g2));color:#fff;cursor:pointer}
+.note{text-align:center;font-size:.75rem;color:var(--mute);padding:4px 16px 10px;margin:0}
+</style>
+</head>
+<body>
+<header><div class="logo">R</div><b>Reyu AI</b><div class="sp"></div>
+<select id="model" title="Model">
+<option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">⚡ Fast (1B)</option>
+<option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">🧠 Smart (3B)</option>
+<option value="Qwen2.5-1.5B-Instruct-q4f16_1-MLC">💻 Code (1.5B)</option>
+</select><button class="ib" id="new">＋ New</button></header>
+<div id="chat"></div>
+<div id="load"><div><i id="bar"></i></div><small id="ltxt"></small></div>
+<form id="f"><div class="bar"><textarea id="in" rows="1" placeholder="Ask Reyu anything…"></textarea><button class="go" id="go">➤</button></div></form>
+<p class="note" id="note">Runs inside your browser. No install, no key, private. The first message downloads the model once.</p>
+<script type="module">
+import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+const $=id=>document.getElementById(id),chat=$("chat"),inp=$("in");
+const SYSTEM="You are Reyu AI, a helpful, friendly and honest assistant. Keep answers clear. Use Markdown and fenced code blocks for code.";
+const KEY="reyu_web_v2";
+let msgs=[],busy=false,engine=null,loaded="";
+try{msgs=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(msgs.slice(-60)))}catch(e){}};
+const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function md(t){return t.split(/```/).map((p,i)=>{
+ if(i%2){const n=p.indexOf("\n");return "<pre><code>"+esc(n>=0?p.slice(n+1):p)+"</code></pre>"}
+ return esc(p).split(/\n{2,}/).map(x=>x.trim()?"<p>"+x.replace(/`([^`]+)`/g,"<code>$1</code>").replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\n/g,"<br>")+"</p>":"").join("")}).join("")}
+function render(){
+ if(!msgs.length){chat.innerHTML='<div class="hero"><h1>Hello, I’m Reyu</h1><p>Your private AI, running right in your browser.</p></div>';return}
+ chat.innerHTML=msgs.map((m,i)=>m.role==="user"?'<div class="msg me"><div class="b">'+esc(m.content)+"</div></div>":'<div class="msg bot"><div class="logo">R</div><div class="b" id="m'+i+'">'+md(m.content)+"</div></div>").join("");
+ chat.scrollTop=chat.scrollHeight;
+}
+async function ensureEngine(){
+ const id=$("model").value;
+ if(engine&&loaded===id)return true;
+ if(!navigator.gpu){$("note").textContent="This browser has no WebGPU. Use a recent Chrome or Edge on a computer.";return false}
+ $("load").style.display="block";
+ const cb=r=>{$("bar").style.width=Math.round((r.progress||0)*100)+"%";$("ltxt").textContent=r.text||""};
+ try{
+  if(!engine)engine=await webllm.CreateMLCEngine(id,{initProgressCallback:cb});
+  else await engine.reload(id);
+  loaded=id;
+ }catch(e){$("load").style.display="none";$("note").textContent="Couldn’t load the model: "+(e.message||e);return false}
+ $("load").style.display="none";return true;
+}
+async function send(q){
+ q=q.trim();if(!q||busy)return;
+ busy=true;$("go").textContent="■";
+ msgs.push({role:"user",content:q},{role:"assistant",content:""});inp.value="";inp.style.height="auto";
+ const bi=msgs.length-1;render();
+ if(!(await ensureEngine())){msgs[bi].content="I couldn’t start the in-browser model. Check the note at the bottom of the page.";busy=false;$("go").textContent="➤";save();render();return}
+ try{
+  const stream=await engine.chat.completions.create({stream:true,temperature:.7,
+   messages:[{role:"system",content:SYSTEM},...msgs.slice(0,-1).slice(-12)]});
+  for await(const ch of stream){
+   msgs[bi].content+=ch.choices[0]?.delta?.content||"";
+   $("m"+bi).innerHTML=md(msgs[bi].content);chat.scrollTop=chat.scrollHeight;
+  }
+ }catch(e){if(!msgs[bi].content)msgs[bi].content="Something went wrong. Please try again."}
+ busy=false;$("go").textContent="➤";save();render();
+}
+$("f").onsubmit=e=>{e.preventDefault();if(busy){engine&&engine.interruptGenerate();return}send(inp.value)};
+inp.onkeydown=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("f").requestSubmit()}};
+inp.oninput=()=>{inp.style.height="auto";inp.style.height=Math.min(inp.scrollHeight,150)+"px"};
+$("new").onclick=()=>{engine&&engine.interruptGenerate();msgs=[];save();render()};
+render();
+</script>
+</body>
+</html>
